@@ -26,11 +26,17 @@ class ClaudeCodeProvider(Provider):
         claude_bin: str = "claude",
         timeout: int = 600,
         extra_args: list[str] | None = None,
+        strict_mcp: bool = True,
     ) -> None:
         self.model = model
         self.claude_bin = claude_bin
         self.timeout = timeout
         self.extra_args = extra_args or []
+        # strict_mcp: the nested `claude -p` loads NO MCP servers (only --mcp-config,
+        # of which there are none). Avoids recursion when RLM runs *inside* an MCP
+        # server (an rlm-MCP nested session would otherwise re-expose rlm_query), and
+        # is faster — sub-calls are text slices that don't need MCP.
+        self.strict_mcp = strict_mcp
 
     def complete(self, messages: list[Message], **kwargs: Any) -> str:
         if shutil.which(self.claude_bin) is None:
@@ -45,7 +51,10 @@ class ClaudeCodeProvider(Provider):
                 f"ClaudeCodeProvider ignores kwargs: {sorted(unsupported)}", stacklevel=2
             )
         prompt = self.flatten(messages)
-        cmd = [self.claude_bin, "-p", "--output-format", "text", *self.extra_args]
+        cmd = [self.claude_bin, "-p", "--output-format", "text"]
+        if self.strict_mcp:
+            cmd.append("--strict-mcp-config")
+        cmd += self.extra_args
         if self.model:
             cmd += ["--model", self.model]
         proc = subprocess.run(
