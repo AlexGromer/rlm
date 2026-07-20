@@ -86,7 +86,7 @@ expose that via `RLM(provider=root, sub_provider=cheaper)`.
   container. The paper notes sandboxed REPLs as future work; production use must
   add isolation. (README "Security".)
 - **No fine-tuning.** RLM-Qwen3-8B (Appendix A) is a training contribution; this
-  repo is the inference scaffold only.
+  repo is the inference scaffold only. Recipe distilled in `docs/FINE_TUNING_RECIPE.md`.
 - **stdout truncation** keeps a head+tail with an elision marker (paper: "short
   prefix and length"); the exact truncation policy is a tunable (`stdout_max_chars`).
 - **In-context decomposition examples** in the root prompt are kept (the paper

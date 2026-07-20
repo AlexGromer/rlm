@@ -75,4 +75,5 @@ restricted interpreter. See `rlm/repl.py`.
 
 - Reference implementation, not production-hardened. No real sandbox (see above).
 - Fine-tuning a natively-recursive model (RLM-Qwen3-8B, Appendix A of the paper)
-  is **out of scope** — this repo is the inference scaffold only.
+  is **out of scope** — this repo is the inference scaffold only. The recipe is
+  distilled for reference in [`docs/FINE_TUNING_RECIPE.md`](docs/FINE_TUNING_RECIPE.md).
