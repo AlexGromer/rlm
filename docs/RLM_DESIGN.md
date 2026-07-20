@@ -82,9 +82,11 @@ The paper uses a strong root model + a cheaper sub-model (GPT-5 / GPT-5-mini); w
 expose that via `RLM(provider=root, sub_provider=cheaper)`.
 
 ## 4. Deliberate simplifications vs. the paper
-- **No real sandbox.** We exec model code in an isolated namespace, not a
-  container. The paper notes sandboxed REPLs as future work; production use must
-  add isolation. (README "Security".)
+- **Restricted in-process sandbox (default on).** Model code runs with an
+  import allow-list + safe builtins + an AST guard against dunder-escape gadgets
+  (`rlm/sandbox.py`); it is NOT a container/kernel sandbox — the paper notes OS-level
+  sandboxed REPLs as future work; fully-untrusted use must still add isolation.
+  (README "Security"; `sandbox=False` opts out.)
 - **No fine-tuning.** RLM-Qwen3-8B (Appendix A) is a training contribution; this
   repo is the inference scaffold only. Recipe distilled in `docs/FINE_TUNING_RECIPE.md`.
 - **stdout truncation** keeps a head+tail with an elision marker (paper: "short

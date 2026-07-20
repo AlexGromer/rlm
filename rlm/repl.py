@@ -7,10 +7,13 @@ model. ``llm_query`` / ``rlm_query`` are exposed as callables so the model can
 *programmatically* (in loops) invoke sub-models over slices of ``context`` —
 this "symbolic recursion" is the key capability of Algorithm 1 in the paper.
 
-SECURITY: this executes model-generated Python in-process. The namespace is
-isolated from the host module globals, but it is NOT a security sandbox (code can
-import os, open files, etc.). For untrusted use, run the REPL in a subprocess /
-container / restricted interpreter. See README "Security".
+SECURITY: this execs model-generated Python in-process. By default (sandbox=True)
+the namespace is a *restricted interpreter* — no filesystem/network/process access,
+an import allow-list, dangerous builtins removed, and an AST guard against
+dunder-escape gadgets (see ``sandbox.py``). This is defense-in-depth, not a kernel
+sandbox: for fully-untrusted input also add OS isolation (container / seccomp /
+unprivileged user, no network). ``sandbox=False`` restores the raw REPL with real
+builtins (trusted content only). See README "Security".
 """
 from __future__ import annotations
 
@@ -19,6 +22,8 @@ import re
 import traceback
 from contextlib import redirect_stdout
 from typing import Any, Callable
+
+from .sandbox import SandboxViolation
 
 _REPL_BLOCK_RE = re.compile(r"```repl[ \t]*\r?\n(.*?)```", re.DOTALL)
 
@@ -31,26 +36,40 @@ class Repl:
         context: Any,
         llm_query: Callable[[str], str],
         rlm_query: Callable[[Any, str], str],
+        *,
+        sandbox: bool = True,
     ) -> None:
-        # A fresh namespace per RLM instance; __builtins__ is the real one so the
-        # model can `import re`, use print(), etc. (the paper runs a real REPL).
-        self.namespace: dict[str, Any] = {
-            "__name__": "__rlm_repl__",
-            "context": context,
-            "llm_query": llm_query,
-            "rlm_query": rlm_query,
-        }
+        # sandbox=True (default): restricted builtins + import allow-list + an AST
+        # guard against dunder-escape gadgets (see sandbox.py). sandbox=False gives
+        # the raw REPL with real builtins — trusted content only.
+        self.sandbox = sandbox
+        if sandbox:
+            from .sandbox import make_namespace
+            self.namespace: dict[str, Any] = make_namespace(context, llm_query, rlm_query)
+        else:
+            self.namespace = {
+                "__name__": "__rlm_repl__",
+                "context": context,
+                "llm_query": llm_query,
+                "rlm_query": rlm_query,
+            }
 
     def execute(self, code: str) -> str:
         """Exec ``code`` in the persistent namespace; return captured stdout.
 
-        On exception, return the formatted traceback instead — the root model
-        uses this execution feedback to repair its next code block.
+        With ``sandbox=True`` the code is first audited (raising ``SandboxViolation``
+        on a forbidden construct). On any exception, return the formatted feedback
+        instead of crashing — the root model uses it to repair its next code block.
         """
         buf = io.StringIO()
         try:
+            if self.sandbox:
+                from .sandbox import audit
+                audit(code)  # raises SandboxViolation on a forbidden construct
             with redirect_stdout(buf):
                 exec(compile(code, "<rlm-repl>", "exec"), self.namespace)
+        except SandboxViolation as e:
+            buf.write(f"\n[SANDBOX BLOCKED] {e}")
         except Exception:  # noqa: BLE001 - feedback to the model, not a crash
             buf.write("\n[REPL ERROR]\n" + traceback.format_exc())
         return buf.getvalue()

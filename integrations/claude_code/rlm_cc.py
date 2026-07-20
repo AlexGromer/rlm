@@ -29,6 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default=None, help="claude --model override")
     ap.add_argument("--depth", type=int, default=1)
     ap.add_argument("--max-iters", type=int, default=12)
+    ap.add_argument("--no-sandbox", action="store_true",
+                    help="disable the REPL sandbox — runs raw model code (trusted input only)")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args(argv)
 
@@ -36,7 +38,8 @@ def main(argv: list[str] | None = None) -> int:
         pathlib.Path(args.file).read_text(encoding="utf-8") if args.file else sys.stdin.read()
     )
     provider = get_provider("claude_code", model=args.model)
-    model = RLM(provider, depth=args.depth, max_iters=args.max_iters, verbose=args.verbose)
+    model = RLM(provider, depth=args.depth, max_iters=args.max_iters, verbose=args.verbose,
+                sandbox=not args.no_sandbox)
     print(model.run(context, query=args.query))
     return 0
 

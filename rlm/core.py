@@ -47,6 +47,7 @@ class RLM:
         system_prompt: str | None = None,
         complete_kwargs: dict[str, Any] | None = None,
         verbose: bool = False,
+        sandbox: bool = True,
     ) -> None:
         if depth < 0:
             raise ValueError("depth must be >= 0")
@@ -59,6 +60,8 @@ class RLM:
         self.system_prompt = system_prompt or _load_default_system_prompt()
         self.complete_kwargs = complete_kwargs or {}
         self.verbose = verbose
+        #: sandbox the REPL exec (restricted builtins + import allow-list + AST guard)
+        self.sandbox = sandbox
 
     # -- public API ---------------------------------------------------------
     def run(self, prompt: Any, query: str | None = None) -> str:
@@ -95,6 +98,7 @@ class RLM:
                         system_prompt=self.system_prompt,
                         complete_kwargs=self.complete_kwargs,
                         verbose=self.verbose,
+                        sandbox=self.sandbox,
                     )
                 return child_box[0].run(context, query=query)
 
@@ -111,7 +115,7 @@ class RLM:
     # -- the loop -----------------------------------------------------------
     def _run(self, context: Any, query: str | None) -> str:
         meta = describe_context(context)
-        repl = Repl(context, self._make_llm_query(), self._make_rlm_query())
+        repl = Repl(context, self._make_llm_query(), self._make_rlm_query(), sandbox=self.sandbox)
 
         system = self.system_prompt.format(**meta)
         kickoff = (

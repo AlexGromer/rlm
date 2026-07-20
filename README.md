@@ -65,15 +65,23 @@ print(model.run(huge_text, query="What is the magic number?"))
 
 ## Security
 
-The REPL **executes model-generated Python in-process**. The namespace is
-isolated from this library's globals, but it is **not a security sandbox** — code
-can import `os`, open files, make network calls, etc. Only run RLM on prompts
-from sources you trust, or run the REPL inside a subprocess / container /
-restricted interpreter. See `rlm/repl.py`.
+The REPL **execs model-generated Python**. By **default (`sandbox=True`)** it runs in
+a *restricted interpreter* (`rlm/sandbox.py`): no filesystem / network / process
+access, an import allow-list (`re`, `json`, `collections`, …), dangerous builtins
+removed (`open`, `eval`, `exec`, `__import__`, `getattr`, …), and an AST guard that
+rejects dunder-escape gadgets (`().__class__.__subclasses__()`). Blocked code is fed
+back to the model as `[SANDBOX BLOCKED] …`, not crashed.
+
+This is **defense-in-depth, not a kernel sandbox** — a determined adversary may still
+find a gadget (e.g. `str.format` spec attribute access). For fully-untrusted input,
+ALSO run the process under OS isolation (container / seccomp / unprivileged user, no
+network). Pass `--no-sandbox` (CLI) or `RLM(..., sandbox=False)` for the raw REPL on
+trusted content.
 
 ## Status / not included
 
-- Reference implementation, not production-hardened. No real sandbox (see above).
+- Reference implementation, not production-hardened. Ships a **restricted in-process
+  sandbox (on by default)** — see Security; add OS isolation for fully-untrusted input.
 - Fine-tuning a natively-recursive model (RLM-Qwen3-8B, Appendix A of the paper)
   is **out of scope** — this repo is the inference scaffold only. The recipe is
   distilled for reference in [`docs/FINE_TUNING_RECIPE.md`](docs/FINE_TUNING_RECIPE.md).
