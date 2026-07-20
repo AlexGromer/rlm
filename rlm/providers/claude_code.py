@@ -20,6 +20,16 @@ from .base import Message, Provider
 class ClaudeCodeProvider(Provider):
     name = "claude_code"
 
+    # Built-in agentic tools disabled for RLM sub-calls. `claude -p` is an agent,
+    # not a completion endpoint: left enabled it answers the RLM scaffold with a
+    # tool_use turn (e.g. Bash) that returns NO assistant text, so the RLM loop
+    # sees empty output and never converges. Disabling them forces a plain-text
+    # ```repl / FINAL(...) response — the only thing the RLM core can parse.
+    _NO_TOOLS = (
+        "Bash Read Write Edit MultiEdit Glob Grep WebFetch WebSearch "
+        "Task Agent TodoWrite NotebookEdit"
+    ).split()
+
     def __init__(
         self,
         model: str | None = None,
@@ -27,6 +37,7 @@ class ClaudeCodeProvider(Provider):
         timeout: int = 600,
         extra_args: list[str] | None = None,
         strict_mcp: bool = True,
+        no_tools: bool = True,
     ) -> None:
         self.model = model
         self.claude_bin = claude_bin
@@ -37,6 +48,9 @@ class ClaudeCodeProvider(Provider):
         # server (an rlm-MCP nested session would otherwise re-expose rlm_query), and
         # is faster — sub-calls are text slices that don't need MCP.
         self.strict_mcp = strict_mcp
+        # no_tools: disable built-in agentic tools so `claude -p` returns text, not a
+        # tool_use turn (see _NO_TOOLS). RLM needs a completion, not an agent action.
+        self.no_tools = no_tools
 
     def complete(self, messages: list[Message], **kwargs: Any) -> str:
         if shutil.which(self.claude_bin) is None:
@@ -50,13 +64,26 @@ class ClaudeCodeProvider(Provider):
             warnings.warn(
                 f"ClaudeCodeProvider ignores kwargs: {sorted(unsupported)}", stacklevel=2
             )
-        prompt = self.flatten(messages)
+        # Install the RLM scaffold as the *real* system prompt via --system-prompt,
+        # instead of letting flatten() demote it to stdin user-text. Without this the
+        # nested `claude -p` runs under the user's OWN system prompt (output-style /
+        # CLAUDE.md / hooks) and rejects the RLM scaffold as prompt-injection. NB: do
+        # NOT use --bare to strip hooks — it also disables the apiKeyHelper (→ "Not
+        # logged in"); --system-prompt alone fully replaces the persona.
+        system, convo = self.split_system(messages)
+        prompt = self.flatten(convo)
         cmd = [self.claude_bin, "-p", "--output-format", "text"]
         if self.strict_mcp:
             cmd.append("--strict-mcp-config")
-        cmd += self.extra_args
+        if system:
+            cmd += ["--system-prompt", system]
         if self.model:
             cmd += ["--model", self.model]
+        cmd += self.extra_args
+        # --disallowedTools takes nargs '+', so keep it LAST: its greedy match would
+        # otherwise swallow following flags/values.
+        if self.no_tools:
+            cmd += ["--disallowedTools", *self._NO_TOOLS]
         proc = subprocess.run(
             cmd,
             input=prompt,
